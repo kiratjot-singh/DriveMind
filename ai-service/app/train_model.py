@@ -49,7 +49,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 # ----------------------------
 from sklearn.ensemble import ExtraTreesClassifier
 model = ExtraTreesClassifier(
-    n_estimators=1500,
+    n_estimators=500,
     random_state=42,
     class_weight="balanced",
     n_jobs=-1

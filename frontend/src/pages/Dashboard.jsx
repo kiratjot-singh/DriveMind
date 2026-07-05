@@ -4,7 +4,9 @@ import {
   getGraphOverview,
   getHealthStatus,
   getRoadRisk,
-  getRiskClusters
+  getRiskClusters,
+  getExperienceStats,
+  getSimilarSegments
 } from "../api/backendApi";
 import { socket } from "../socket/socketClient";
 import RiskMap from "../components/RiskMap";
@@ -26,6 +28,9 @@ function Dashboard({ onLogout, user }) {
   const [selectedSegment, setSelectedSegment] = useState("curve_42");
   const [provisionedVehicleId, setProvisionedVehicleId] = useState("");
 
+  const [stats, setStats] = useState(null);
+  const [similarSegments, setSimilarSegments] = useState([]);
+
   const loadDashboardData = async () => {
     try {
       const healthData = await getHealthStatus();
@@ -40,11 +45,27 @@ function Dashboard({ onLogout, user }) {
         console.warn("Failed to load Neo4j risk clusters:", err);
       }
 
+      let statsData = null;
+      try {
+        statsData = await getExperienceStats();
+      } catch (err) {
+        console.warn("Failed to load experience stats:", err);
+      }
+
+      let similarityData = { data: [] };
+      try {
+        similarityData = await getSimilarSegments(selectedSegment);
+      } catch (err) {
+        console.warn("Failed to load similar segments:", err);
+      }
+
       setHealth(healthData);
       setExperiences(experienceData.data || []);
       setRoadRisk(riskData);
       setGraphRelationships(graphData.data || []);
       setRiskClusters(clusterData.data || []);
+      setStats(statsData?.stats || null);
+      setSimilarSegments(similarityData.data || []);
     } catch (error) {
       console.error("Failed to load dashboard data:", error);
     }
@@ -167,11 +188,11 @@ function Dashboard({ onLogout, user }) {
                 <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Service Health</span>
                   <span className="text-md font-bold text-slate-200 mt-1 block">
-                    {health ? health.message : "Pinging API..."}
+                    {health ? health.status.toUpperCase() : "Pinging API..."}
                   </span>
                   {health && (
                     <span className="inline-block mt-2 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-900/30 rounded">
-                      Connected
+                      MongoDB: {health.databases?.mongodb} | Neo4j: {health.databases?.neo4j}
                     </span>
                   )}
                 </div>
@@ -236,12 +257,82 @@ function Dashboard({ onLogout, user }) {
                 <RiskMap activeRoadRisk={roadRisk} latestAlert={latestAlert} />
               </div>
 
-              {/* Graph Clusters & Relationships Lists */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Historical Trends & Dangerous Segments Row */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                
+                {/* SVG Risk trends over time */}
+                <div className="md:col-span-8 bg-slate-900/40 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between min-h-[250px]">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-200 mb-1">Historical Risk Trends</h3>
+                    <p className="text-xs text-slate-500">Hazard events distribution (last 7 days)</p>
+                  </div>
+                  
+                  {stats && stats.dailyTrends && stats.dailyTrends.length > 0 ? (
+                    <div className="h-[120px] flex items-end justify-between px-4 mt-4 relative">
+                      {/* Grid background lines */}
+                      <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-10">
+                        <div className="border-t border-slate-500 w-full"></div>
+                        <div className="border-t border-slate-500 w-full"></div>
+                        <div className="border-t border-slate-500 w-full"></div>
+                      </div>
+                      
+                      {stats.dailyTrends.map((day, idx) => {
+                        const heightPct = Math.round((day.avgRisk || 0) * 100);
+                        return (
+                          <div key={idx} className="flex flex-col items-center flex-1 mx-1.5 z-10">
+                            <div className="text-[9px] text-cyan-400 font-mono mb-1">{(day.avgRisk || 0).toFixed(2)}</div>
+                            <div 
+                              className="w-full bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-t-sm transition-all duration-500"
+                              style={{ height: `${Math.max(10, heightPct)}px` }}
+                            ></div>
+                            <span className="text-[8px] text-slate-500 mt-2 font-mono">{day._id.slice(5)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 border border-dashed border-slate-850 rounded-xl text-slate-600 text-xs">
+                      No historical trend data logged yet. Playback some scenarios.
+                    </div>
+                  )}
+                </div>
+
+                {/* Top dangerous segments */}
+                <div className="md:col-span-4 bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
+                  <h3 className="text-md font-bold text-slate-200 mb-1">Top Danger Sectors</h3>
+                  <p className="text-xs text-slate-500 mb-4">Sectors ranked by incident frequency</p>
+                  
+                  <div className="space-y-3">
+                    {stats && stats.topSegments && stats.topSegments.length > 0 ? (
+                      stats.topSegments.map((seg, idx) => (
+                        <div key={idx} className="text-xs">
+                          <div className="flex justify-between font-bold text-slate-300 mb-1">
+                            <span className="uppercase font-mono">{seg._id}</span>
+                            <span>{seg.count} incidents</span>
+                          </div>
+                          <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-amber-400 h-full rounded-full" 
+                              style={{ width: `${(seg.avgRisk || 0) * 100}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-6 text-slate-600 text-xs">
+                        No sectors ranked yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Neo4j Hazard Clusters & Similar Segment Explorer */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                 
                 {/* Risk Clusters */}
-                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
-                  <h3 className="text-lg font-bold text-slate-200 mb-1">Neo4j Hazard Clusters</h3>
+                <div className="md:col-span-6 bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
+                  <h3 className="text-lg font-bold text-slate-200 mb-1">Neo4j Threat Clusters</h3>
                   <p className="text-xs text-slate-500 mb-4">Adjacent segments linked by identical hazards (Cypher similarity)</p>
                   
                   <div className="space-y-2.5 max-h-[250px] overflow-auto">
@@ -270,26 +361,30 @@ function Dashboard({ onLogout, user }) {
                   </div>
                 </div>
 
-                {/* Graph relations */}
-                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
-                  <h3 className="text-lg font-bold text-slate-200 mb-1">Graph Knowledge Logs</h3>
-                  <p className="text-xs text-slate-500 mb-4">Semantic triples linking segments and weather from Neo4j</p>
+                {/* Similar road segment view explorer */}
+                <div className="md:col-span-6 bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
+                  <h3 className="text-lg font-bold text-slate-200 mb-1">Similar Sector Threats</h3>
+                  <p className="text-xs text-slate-500 mb-4">Other sectors sharing identical hazards to focus segment ({selectedSegment})</p>
                   
                   <div className="space-y-2.5 max-h-[250px] overflow-auto">
-                    {graphRelationships.length > 0 ? (
-                      graphRelationships.map((item, index) => (
+                    {similarSegments.length > 0 ? (
+                      similarSegments.map((item, index) => (
                         <div
                           key={index}
-                          className="bg-slate-950 border border-slate-850 rounded-xl p-3 text-xs font-mono text-cyan-300"
+                          className="bg-slate-950 border border-slate-850 rounded-xl p-3 text-xs flex justify-between items-center"
                         >
-                          <span className="text-slate-300 font-semibold font-sans">{item.start.labels.join(", ")}</span>
-                          {" -> "}{item.relationship.type}{" -> "}
-                          <span className="text-slate-300 font-semibold font-sans">{item.end.labels.join(", ")}</span>
+                          <div>
+                            <p className="font-bold text-slate-300 uppercase font-mono">{item.similarSegment}</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">Hazard: <span className="text-amber-400 capitalize">{item.sharedHazard?.replace(/_/g, " ")}</span></p>
+                          </div>
+                          <span className="text-[10px] text-slate-400 bg-slate-900 px-2.5 py-1 rounded">
+                            Logged {item.frequency} times
+                          </span>
                         </div>
                       ))
                     ) : (
                       <div className="text-center py-12 border border-dashed border-slate-850 rounded-xl text-slate-600 text-xs">
-                        No relationships logged.
+                        No other segments currently log similar threats to {selectedSegment}.
                       </div>
                     )}
                   </div>
