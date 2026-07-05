@@ -12,8 +12,8 @@ from sklearn.ensemble import VotingClassifier
 # ----------------------------
 # Paths
 # ----------------------------
-DATA_PATH = "data/intent_training_data.csv"
-MODEL_PATH = "models/voting_intent_model.joblib"
+DATA_PATH = "data/real_intent_training_data.csv"
+MODEL_PATH = "models/intent_model.joblib"
 
 # ----------------------------
 # Load Dataset
@@ -59,7 +59,8 @@ gb = GradientBoostingClassifier(
 
 lr = LogisticRegression(
     max_iter=1000,
-    random_state=42
+    random_state=42,
+    class_weight="balanced"
 )
 
 # ----------------------------

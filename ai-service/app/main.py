@@ -47,17 +47,18 @@ def predict_intent(data: IntentRequest):
             "message": "Intent model not found. Train the model first."
         }
 
-    features = [[
-        data.speed,
-        data.acceleration,
-        data.brakePressure,
-        data.steeringAngle,
-        data.laneOffset,
-        data.distanceToFrontVehicle
-    ]]
+    import pandas as pd
+    features_df = pd.DataFrame([{
+        "speed": data.speed,
+        "acceleration": data.acceleration,
+        "brakePressure": data.brakePressure,
+        "steeringAngle": data.steeringAngle,
+        "laneOffset": data.laneOffset,
+        "distanceToFrontVehicle": data.distanceToFrontVehicle
+    }])
 
-    prediction = model.predict(features)[0]
-    probabilities = model.predict_proba(features)[0]
+    prediction = model.predict(features_df)[0]
+    probabilities = model.predict_proba(features_df)[0]
     confidence = float(max(probabilities))
 
     return {

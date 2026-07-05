@@ -1,0 +1,111 @@
+{
+  "dataset": "Surat Dumas Road trajectory workbook",
+  "labeling": "proxy labels derived from motion outliers and lane-edge position",
+  "source_rows": 59614,
+  "source_vehicles": 702,
+  "feature_rows": 59614,
+  "positive_risk_rate": 0.4439057939410206,
+  "train_rows": 47507,
+  "test_rows": 12107,
+  "train_vehicle_count": 561,
+  "test_vehicle_count": 141,
+  "test_accuracy": 0.9998348063103989,
+  "best_model_params": {
+    "n_estimators": 200,
+    "max_depth": null,
+    "min_samples_leaf": 1
+  },
+  "candidate_runs": [
+    {
+      "params": {
+        "n_estimators": 200,
+        "max_depth": null,
+        "min_samples_leaf": 1
+      },
+      "accuracy": 0.9998348063103989
+    },
+    {
+      "params": {
+        "n_estimators": 300,
+        "max_depth": null,
+        "min_samples_leaf": 1
+      },
+      "accuracy": 0.9998348063103989
+    },
+    {
+      "params": {
+        "n_estimators": 300,
+        "max_depth": 24,
+        "min_samples_leaf": 1
+      },
+      "accuracy": 0.9998348063103989
+    },
+    {
+      "params": {
+        "n_estimators": 300,
+        "max_depth": 18,
+        "min_samples_leaf": 2
+      },
+      "accuracy": 0.9998348063103989
+    },
+    {
+      "params": {
+        "n_estimators": 400,
+        "max_depth": null,
+        "min_samples_leaf": 2
+      },
+      "accuracy": 0.9998348063103989
+    }
+  ],
+  "feature_columns": [
+    "speed_mps",
+    "acceleration_mps2",
+    "lateral_velocity_mps",
+    "lateral_acceleration_mps2",
+    "longitudinal_jerk_mps3",
+    "lateral_jerk_mps3",
+    "abs_acceleration_mps2",
+    "abs_lateral_velocity_mps",
+    "abs_lateral_acceleration_mps2",
+    "distance_from_lane_center_m",
+    "lane_edge_margin_m",
+    "vehicle_type_id"
+  ],
+  "classification_report": {
+    "0": {
+      "precision": 0.9998590159311997,
+      "recall": 0.9998590159311997,
+      "f1-score": 0.9998590159311997,
+      "support": 7093.0
+    },
+    "1": {
+      "precision": 0.9998005584363782,
+      "recall": 0.9998005584363782,
+      "f1-score": 0.9998005584363782,
+      "support": 5014.0
+    },
+    "accuracy": 0.9998348063103989,
+    "macro avg": {
+      "precision": 0.9998297871837889,
+      "recall": 0.9998297871837889,
+      "f1-score": 0.9998297871837889,
+      "support": 12107.0
+    },
+    "weighted avg": {
+      "precision": 0.9998348063103989,
+      "recall": 0.9998348063103989,
+      "f1-score": 0.9998348063103989,
+      "support": 12107.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      7092,
+      1
+    ],
+    [
+      1,
+      5013
+    ]
+  ]
+}
