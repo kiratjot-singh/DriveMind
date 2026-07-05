@@ -44,10 +44,13 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # ----------------------------
-# Model Configuration (Random Forest Classifier)
+# Model Configuration (Random Forest Classifier with Regularization)
 # ----------------------------
 model = RandomForestClassifier(
     n_estimators=300,
+    max_depth=32,
+    min_samples_split=4,
+    min_samples_leaf=2,
     random_state=42,
     class_weight="balanced",
     n_jobs=-1
