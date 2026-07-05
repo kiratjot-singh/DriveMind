@@ -80,9 +80,9 @@ Possible predictions include:
 - Turn
 - Change lane
 
-The current model is trained on synthetic simulation data for MVP demonstration.
+The current model is trained on a real-world vehicle trajectory dataset (the `I See You` dataset).
 
-> Note: The current AI model is a prototype trained on synthetic data. It is not claimed to represent real-world vehicle performance. Future versions can use CARLA simulation or real-world trajectory datasets.
+> Note: The AI model is trained on real-world vehicle trajectories recorded by surveillance cameras at road intersections, mapping current telemetry to actual future driver maneuvers.
 
 ---
 
@@ -301,9 +301,10 @@ DriveMind/
 ├── ai-service/
 │   ├── app/
 │   │   ├── main.py
-│   │   └── train_model.py
+│   │   ├── train_model.py
+│   │   └── data_pipeline/
+│   │       └── process_real_data.py
 │   ├── data/
-│   │   └── generate_intent_data.py
 │   ├── models/
 │   └── requirements.txt
 │

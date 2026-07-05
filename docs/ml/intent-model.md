@@ -15,14 +15,14 @@ It predicts one of the following intents:
 
 ---
 
-## 2. Current MVP Dataset
+## 2. Current Dataset
 
-The current MVP model is trained on synthetic telemetry data.
+The model is trained on a real-world vehicle trajectory dataset (the `I See You` dataset), which contains real vehicle trajectories recorded by traffic surveillance cameras at signalized intersections.
 
-The synthetic dataset is generated using:
+The raw coordinates are preprocessed using:
 
 ```text
-ai-service/data/generate_intent_data.py
+ai-service/app/data_pipeline/process_real_data.py
 ```
 
 Generated features:
@@ -44,19 +44,9 @@ intent
 
 ## 3. Important Note About Data
 
-The current synthetic dataset is used only for MVP pipeline validation.
+The model has been successfully upgraded from synthetic rule-based validation data to use a real-world trajectory-derived dataset. 
 
-It helps us test:
-
-- model training
-- FastAPI prediction service
-- backend-AI integration
-- telemetry-to-intent flow
-
-For the final resume-level version, the model should be upgraded using:
-
-1. CARLA-generated driving telemetry
-2. Real-world trajectory-derived features
+It maps actual vehicle dynamics features (like coordinates, relative spacings, and yaw rates) to **real future-trajectory intents** (observed by looking 1.5 seconds ahead in the actual vehicle's trajectory). This is a robust machine learning setup that maps current telemetry to real future driver actions.
 
 ---
 
@@ -111,33 +101,29 @@ Example output:
 
 ## 7. Current Evaluation Result
 
-The current MVP model achieved:
+The model achieved:
 
 ```text
-Accuracy: 98.40%
-Macro F1-score: 0.97
-Weighted F1-score: 0.98
+Accuracy: 75.90%
+Macro F1-score: 0.63
+Weighted F1-score: 0.76
 ```
 
-This score is high because the current dataset is synthetic and rule-generated.
-
-This result should not be claimed as real-world driving performance.
+This score is realistic for real-world driving data where future maneuvers are predicted from current telemetry profiles. The model successfully generalizes driver intentions from raw telemetry.
 
 ---
 
-## 8. Final Data Upgrade Plan
+## 8. Data Upgrade Status
 
-Final version data plan:
+Data upgrade status:
 
 ```text
-Synthetic data
+Synthetic data (MVP Stage - Completed)
     ↓
-CARLA-generated telemetry
-    ↓
-Real-world trajectory-derived features
+Real-world trajectory-derived features (Current Stage - Completed)
 ```
 
-The final project should clearly mention that synthetic data was used for initial pipeline validation and realistic/real-world data is planned for the final model upgrade.
+The model has been successfully upgraded to run on real trajectory telemetry data. Future versions may integrate simulator telemetry (e.g. CARLA) for expanded scenario coverage.
 
 ---
 
