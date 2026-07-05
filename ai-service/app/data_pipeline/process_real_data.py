@@ -54,14 +54,13 @@ def process_clip(df_clip):
         speeds[0] = 0.0
         headings[0] = 0.0
         
-        # Calculate speed first
+        # Calculate speed
         for i in range(1, n):
             dt = (frames[i] - frames[i-1]) / 30.0
             if dt <= 0:
                 dt = 1/30.0
             dist = haversine_distance(lats[i-1], lons[i-1], lats[i], lons[i])
-            raw_speed = (dist / dt) * 3.6  # speed in km/h
-            speeds[i] = np.clip(raw_speed, 0.0, 80.0)
+            speeds[i] = np.clip((dist / dt) * 3.6, 0.0, 80.0)  # speed in km/h
             
         # Smooth speed to get cleaner accelerations
         speeds = pd.Series(speeds).rolling(window=15, min_periods=1, center=True).mean().values
@@ -73,7 +72,6 @@ def process_clip(df_clip):
                 dt = 1/30.0
             
             raw_acc = ((speeds[i] - speeds[i-1]) / 3.6) / dt  # acceleration in m/s^2
-            # Clip acceleration to physically realistic limits (-6.0 m/s^2 brake to 4.0 m/s^2 acceleration)
             accelerations[i] = np.clip(raw_acc, -6.0, 4.0)
             
             headings[i] = calculate_bearing(lats[i-1], lons[i-1], lats[i], lons[i])
@@ -98,16 +96,25 @@ def process_clip(df_clip):
                 if diff_angle < 0:
                     lane_offsets[i] = -lane_offsets[i]
                     
-        vehicle_trajectories[veh_id] = {
-            "frames": frames,
-            "lats": lats,
-            "lons": lons,
-            "speeds": speeds,
-            "accelerations": accelerations,
-            "headings": headings,
-            "steering_rates": steering_rates,
-            "lane_offsets": lane_offsets
+        # Compute rolling features over past windows (using pandas Series rolling)
+        speeds_series = pd.Series(speeds)
+        steering_series = pd.Series(steering_rates)
+        accel_series = pd.Series(accelerations)
+        lane_series = pd.Series(lane_offsets)
+        
+        traj_data = {
+            "frames": frames, "lats": lats, "lons": lons,
+            "speeds": speeds, "accelerations": accelerations,
+            "headings": headings, "steering_rates": steering_rates, "lane_offsets": lane_offsets
         }
+        
+        # Super dense rolling statistics windows: 10, 15, 30, 45 frames
+        for name, series in [("speed", speeds_series), ("steering", steering_series), ("accel", accel_series), ("lane", lane_series)]:
+            for win in [10, 15, 30, 45]:
+                traj_data[f"{name}_mean_{win}"] = series.rolling(window=win, min_periods=1).mean().values
+                traj_data[f"{name}_std_{win}"] = series.rolling(window=win, min_periods=1).std().fillna(0.0).values
+                    
+        vehicle_trajectories[veh_id] = traj_data
         
         # Populate frame lookup for distance to front vehicle
         for i in range(n):
@@ -116,7 +123,7 @@ def process_clip(df_clip):
                 frame_lookup[f] = {}
             frame_lookup[f][veh_id] = (lats[i], lons[i], headings[i])
             
-    # Compute relative features and future ground-truth labels
+    # Compute relative features, sequence history lags, and future stable ground-truth labels
     for veh_id, traj in vehicle_trajectories.items():
         frames = traj["frames"]
         lats = traj["lats"]
@@ -130,7 +137,8 @@ def process_clip(df_clip):
         n = len(frames)
         look_ahead = 45  # 1.5 seconds at 30 FPS
         
-        for i in range(n - look_ahead):
+        # Start at index 45 to ensure we have a valid dense history window
+        for i in range(45, n - look_ahead):
             f = frames[i]
             dist_to_front = 100.0  # Default to 100 meters if no vehicle ahead
             lat_i, lon_i, head_i = lats[i], lons[i], headings[i]
@@ -151,23 +159,68 @@ def process_clip(df_clip):
             
             speed = speeds[i]
             acc = accelerations[i]
-            # Brake pressure proxied by deceleration level (scaled from 0.0 to 1.0)
             brake_pressure = min(1.0, max(0.0, -acc / 4.0)) if acc < 0 else 0.0
             steering_angle = steering_rates[i]
             lane_offset = lane_offsets[i]
             
-            # Future window metrics for labeling
+            # Domain-specific Physical Interaction features
+            speed_sq = speed ** 2
+            speed_dist_ratio = speed / (dist_to_front + 1.0)
+            steering_speed = steering_angle * speed
+            abs_steering_speed = abs(steering_angle) * speed
+            safe_margin = dist_to_front - (speed / 3.6 * 1.5)
+            abs_steering = abs(steering_angle)
+            accel_steering = acc * steering_angle
+            
+            # Pack core and physical interaction features
+            rec = {
+                "speed": round(speed, 2),
+                "acceleration": round(acc, 2),
+                "brakePressure": round(brake_pressure, 2),
+                "steeringAngle": round(steering_angle, 2),
+                "laneOffset": round(lane_offset, 2),
+                "distanceToFrontVehicle": round(dist_to_front, 2),
+                "speed_sq": round(speed_sq, 2),
+                "speed_dist_ratio": round(speed_dist_ratio, 2),
+                "steering_speed": round(steering_speed, 2),
+                "abs_steering_speed": round(abs_steering_speed, 2),
+                "safe_margin": round(safe_margin, 2),
+                "abs_steering": round(abs_steering, 2),
+                "accel_steering": round(accel_steering, 2)
+            }
+            
+            # Dense history lag features: 5, 10, 15, 20, 25, 30, 45
+            for lag in [5, 10, 15, 20, 25, 30, 45]:
+                rec[f"speed_lag_{lag}"] = round(speeds[i-lag], 2)
+                rec[f"steering_lag_{lag}"] = round(steering_rates[i-lag], 2)
+                rec[f"accel_lag_{lag}"] = round(accelerations[i-lag], 2)
+                rec[f"lane_offset_lag_{lag}"] = round(lane_offsets[i-lag], 2)
+                rec[f"dist_lag_{lag}"] = round(dist_to_front, 2)  # also lag distance to front
+            
+            # Multi-window rolling statistics features: 10, 15, 30, 45
+            for win in [10, 15, 30, 45]:
+                rec[f"speed_mean_{win}"] = round(traj[f"speed_mean_{win}"][i], 2)
+                rec[f"speed_std_{win}"] = round(traj[f"speed_std_{win}"][i], 2)
+                rec[f"steering_mean_{win}"] = round(traj[f"steering_mean_{win}"][i], 2)
+                rec[f"steering_std_{win}"] = round(traj[f"steering_std_{win}"][i], 2)
+                rec[f"accel_mean_{win}"] = round(traj[f"accel_mean_{win}"][i], 2)
+                rec[f"accel_std_{win}"] = round(traj[f"accel_std_{win}"][i], 2)
+                rec[f"lane_mean_{win}"] = round(traj[f"lane_mean_{win}"][i], 2)
+                rec[f"lane_std_{win}"] = round(traj[f"lane_std_{win}"][i], 2)
+            
+            # Future window metrics for labeling using mean endpoint window to eliminate noise
             future_speeds = speeds[i:i+look_ahead]
             future_headings = headings[i:i+look_ahead]
             future_lane_offsets = lane_offsets[i:i+look_ahead]
             
-            speed_change = future_speeds[-1] - speed
-            heading_change = future_headings[-1] - head_i
-            heading_change = (heading_change + 180) % 360 - 180
+            future_speed_stable = np.mean(future_speeds[-15:])
+            future_heading_stable = np.mean(future_headings[-15:])
             
+            speed_change = future_speed_stable - speed
+            heading_change = (future_heading_stable - head_i + 180) % 360 - 180
             max_future_offset = np.max(np.abs(future_lane_offsets))
             
-            # Assign ground truth intent based on what the vehicle *actually* does in the future
+            # Assign ground truth intent based on future stable behavior
             intent = "normal"
             if speed_change < -5.0:
                 intent = "brake"
@@ -180,15 +233,8 @@ def process_clip(df_clip):
             elif speed_change > 5.0:
                 intent = "accelerate"
                 
-            processed_records.append({
-                "speed": round(speed, 2),
-                "acceleration": round(acc, 2),
-                "brakePressure": round(brake_pressure, 2),
-                "steeringAngle": round(steering_angle, 2),
-                "laneOffset": round(lane_offset, 2),
-                "distanceToFrontVehicle": round(dist_to_front, 2),
-                "intent": intent
-            })
+            rec["intent"] = intent
+            processed_records.append(rec)
             
     return pd.DataFrame(processed_records)
 

@@ -21,13 +21,14 @@ MODEL_PATH = "models/intent_model.joblib"
 df = pd.read_csv(DATA_PATH)
 
 features = [
-    "speed",
-    "acceleration",
-    "brakePressure",
-    "steeringAngle",
-    "laneOffset",
-    "distanceToFrontVehicle"
+    "speed", "acceleration", "brakePressure", "steeringAngle", "laneOffset", "distanceToFrontVehicle",
+    "speed_sq", "speed_dist_ratio", "steering_speed", "abs_steering_speed",
+    "safe_margin", "abs_steering", "accel_steering"
 ]
+for lag in [5, 10, 15, 20, 25, 30, 45]:
+    features.extend([f"speed_lag_{lag}", f"steering_lag_{lag}", f"accel_lag_{lag}", f"lane_offset_lag_{lag}", f"dist_lag_{lag}"])
+for win in [10, 15, 30, 45]:
+    features.extend([f"speed_mean_{win}", f"speed_std_{win}", f"steering_mean_{win}", f"steering_std_{win}", f"accel_mean_{win}", f"accel_std_{win}", f"lane_mean_{win}", f"lane_std_{win}"])
 
 X = df[features]
 y = df["intent"]
@@ -44,53 +45,32 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # ----------------------------
-# Base Models
+# Model Configuration (Extra Trees Classifier)
 # ----------------------------
-rf = RandomForestClassifier(
-    n_estimators=100,
+from sklearn.ensemble import ExtraTreesClassifier
+model = ExtraTreesClassifier(
+    n_estimators=500,
     random_state=42,
-    class_weight="balanced"
-)
-
-gb = GradientBoostingClassifier(
-    n_estimators=100,
-    random_state=42
-)
-
-lr = LogisticRegression(
-    max_iter=1000,
-    random_state=42,
-    class_weight="balanced"
-)
-
-# ----------------------------
-# Voting Ensemble
-# ----------------------------
-voting_model = VotingClassifier(
-    estimators=[
-        ('rf', rf),
-        ('gb', gb),
-        ('lr', lr)
-    ],
-    voting='soft'      # use probabilities
+    class_weight="balanced",
+    n_jobs=-1
 )
 
 # ----------------------------
 # Train
 # ----------------------------
-voting_model.fit(X_train, y_train)
+model.fit(X_train, y_train)
 
 # ----------------------------
 # Predict
 # ----------------------------
-y_pred = voting_model.predict(X_test)
+y_pred = model.predict(X_test)
 
 # ----------------------------
 # Evaluation
 # ----------------------------
 accuracy = accuracy_score(y_test, y_pred)
 
-print("Voting Ensemble Model Trained")
+print("Random Forest Classifier Model Trained")
 print(f"Accuracy: {accuracy:.4f}")
 
 print("\nClassification Report")
@@ -102,6 +82,6 @@ print(confusion_matrix(y_test, y_pred))
 # ----------------------------
 # Save Model
 # ----------------------------
-joblib.dump(voting_model, MODEL_PATH)
+joblib.dump(model, MODEL_PATH)
 
 print(f"\nModel saved at {MODEL_PATH}")

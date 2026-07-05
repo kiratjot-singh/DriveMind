@@ -10,7 +10,8 @@ const predictIntent = async (telemetry) => {
       brakePressure: telemetry.brakePressure,
       steeringAngle: telemetry.steeringAngle,
       laneOffset: telemetry.laneOffset,
-      distanceToFrontVehicle: telemetry.distanceToFrontVehicle
+      distanceToFrontVehicle: telemetry.distanceToFrontVehicle,
+      vehicleId: telemetry.vehicleId
     });
 
     return response.data;

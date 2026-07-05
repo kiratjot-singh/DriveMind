@@ -70,3 +70,13 @@ export const sendTelemetry = async (telemetryData) => {
   });
   return response.data;
 };
+
+export const getExperienceStats = async () => {
+  const response = await apiClient.get("/api/experiences/stats");
+  return response.data;
+};
+
+export const getSimilarSegments = async (roadSegmentId) => {
+  const response = await apiClient.get(`/api/graph/similar/${roadSegmentId}`);
+  return response.data;
+};

@@ -43,7 +43,51 @@ const getExperiencesByRoadSegment = async (req, res) => {
   }
 };
 
+const getExperienceStats = async (req, res) => {
+  try {
+    const topSegments = await Experience.aggregate([
+      { $group: { _id: "$roadSegmentId", count: { $sum: 1 }, avgRisk: { $avg: "$riskScore" } } },
+      { $sort: { count: -1 } },
+      { $limit: 5 }
+    ]);
+
+    const eventBreakdown = await Experience.aggregate([
+      { $group: { _id: "$eventType", count: { $sum: 1 } } }
+    ]);
+
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const dailyTrends = await Experience.aggregate([
+      { $match: { createdAt: { $gte: sevenDaysAgo } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 },
+          avgRisk: { $avg: "$riskScore" }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        topSegments,
+        eventBreakdown,
+        dailyTrends
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch experience stats",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllExperiences,
-  getExperiencesByRoadSegment
+  getExperiencesByRoadSegment,
+  getExperienceStats
 };

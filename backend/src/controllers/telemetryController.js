@@ -51,6 +51,7 @@ const createTelemetry = async (req, res) => {
     );
 
     const intentPrediction = await predictIntent({
+      vehicleId,
       speed,
       acceleration,
       brakePressure,
@@ -68,6 +69,10 @@ const createTelemetry = async (req, res) => {
       distanceToFrontVehicle,
       weather
     });
+
+    // Query past incidents from MongoDB for historical context
+    const pastIncidentsCount = await Experience.countDocuments({ roadSegmentId });
+    riskResult.pastIncidentsCount = pastIncidentsCount;
 
     let savedExperience = null;
     let graphMemoryCreated = false;
@@ -107,6 +112,8 @@ const createTelemetry = async (req, res) => {
         intentConfidence: intentPrediction.confidence,
         reasons: riskResult.reasons,
         recommendedAction: riskResult.recommendedAction,
+        recommendations: riskResult.recommendations,
+        pastIncidentsCount,
         message: `High risk detected at ${roadSegmentId}. Recommended action: ${riskResult.recommendedAction}`
       });
     }

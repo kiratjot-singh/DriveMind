@@ -18,14 +18,60 @@ function VehicleCockpit() {
   const [apiResponse, setApiResponse] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const streamIntervalRef = useRef(null);
+  // Scenario states
+  const [activeScenario, setActiveScenario] = useState(null);
+  const [scenarioFrameIdx, setScenarioFrameIdx] = useState(0);
+  const [isPlayingScenario, setIsPlayingScenario] = useState(false);
+  const [multiVehicleMode, setMultiVehicleMode] = useState(false);
 
-  // Active vehicle provisioning check
+  const streamIntervalRef = useRef(null);
+  const scenarioIntervalRef = useRef(null);
+
   const activeVehicleId = localStorage.getItem("active_vehicle_id") || "legacy_vehicle_sim";
 
-  const handleTransmit = async () => {
+  // Pre-configured simulation scenarios
+  const scenarios = {
+    tailgate: {
+      name: "Unsafe Tailgating (car_1 followed by car_2)",
+      description: "Simulates one vehicle rapidly approaching the rear of another at high speed.",
+      frames: [
+        { speed: 60, acceleration: 0, brakePressure: 0, steeringAngle: 0, laneOffset: 0, distance: 75, weather: "clear", segment: "highway_101" },
+        { speed: 60, acceleration: 0, brakePressure: 0, steeringAngle: 0, laneOffset: 0, distance: 50, weather: "clear", segment: "highway_101" },
+        { speed: 60, acceleration: 0, brakePressure: 0, steeringAngle: 0, laneOffset: 0, distance: 30, weather: "clear", segment: "highway_101" },
+        { speed: 60, acceleration: 0, brakePressure: 0, steeringAngle: 0, laneOffset: 0, distance: 18, weather: "clear", segment: "highway_101" },
+        { speed: 60, acceleration: 0, brakePressure: 0, steeringAngle: 0, laneOffset: 0, distance: 8, weather: "clear", segment: "highway_101" },
+        { speed: 60, acceleration: 0, brakePressure: 0, steeringAngle: 0, laneOffset: 0, distance: 4, weather: "clear", segment: "highway_101" }
+      ]
+    },
+    curve: {
+      name: "Sharp Curve Drift (curve_42 overspeed)",
+      description: "Simulates a vehicle losing lateral grip by speeding through a sharp bend.",
+      frames: [
+        { speed: 45, acceleration: 0.5, brakePressure: 0, steeringAngle: 5, laneOffset: 0.1, distance: 80, weather: "clear", segment: "curve_42" },
+        { speed: 55, acceleration: 0.8, brakePressure: 0, steeringAngle: 12, laneOffset: 0.3, distance: 80, weather: "clear", segment: "curve_42" },
+        { speed: 65, acceleration: 1.0, brakePressure: 0, steeringAngle: 20, laneOffset: 0.6, distance: 80, weather: "clear", segment: "curve_42" },
+        { speed: 72, acceleration: 0.5, brakePressure: 0, steeringAngle: 25, laneOffset: 1.0, distance: 80, weather: "clear", segment: "curve_42" },
+        { speed: 78, acceleration: -0.2, brakePressure: 0, steeringAngle: 28, laneOffset: 1.3, distance: 80, weather: "clear", segment: "curve_42" },
+        { speed: 82, acceleration: -0.5, brakePressure: 0.2, steeringAngle: 30, laneOffset: 1.5, distance: 80, weather: "clear", segment: "curve_42" }
+      ]
+    },
+    weather: {
+      name: "Thick Fog Emergency Braking",
+      description: "Simulates a vehicle hitting the brakes due to zero visibility in thick fog.",
+      frames: [
+        { speed: 65, acceleration: 0, brakePressure: 0, steeringAngle: 0, laneOffset: 0, distance: 90, weather: "fog", segment: "intersection_alpha" },
+        { speed: 60, acceleration: -0.5, brakePressure: 0.2, steeringAngle: 0, laneOffset: 0, distance: 60, weather: "fog", segment: "intersection_alpha" },
+        { speed: 50, acceleration: -1.2, brakePressure: 0.5, steeringAngle: 0, laneOffset: 0, distance: 35, weather: "fog", segment: "intersection_alpha" },
+        { speed: 35, acceleration: -2.5, brakePressure: 0.8, steeringAngle: 0, laneOffset: 0, distance: 18, weather: "fog", segment: "intersection_alpha" },
+        { speed: 15, acceleration: -3.5, brakePressure: 0.95, steeringAngle: 0, laneOffset: 0, distance: 8, weather: "fog", segment: "intersection_alpha" },
+        { speed: 0, acceleration: -3.5, brakePressure: 0.95, steeringAngle: 0, laneOffset: 0, distance: 5, weather: "fog", segment: "intersection_alpha" }
+      ]
+    }
+  };
+
+  const handleTransmit = async (overridePayload = null) => {
     setErrorMessage("");
-    const payload = {
+    const payload = overridePayload || {
       vehicleId: activeVehicleId,
       roadSegmentId: segment,
       speed: Number(speed),
@@ -40,21 +86,83 @@ function VehicleCockpit() {
     try {
       const response = await sendTelemetry(payload);
       setApiResponse(response.data);
-      if (isStreaming) {
+      if (isStreaming && !overridePayload) {
         setStreamCount((prev) => prev + 1);
       }
     } catch (err) {
       setErrorMessage(err.response?.data?.message || "Failed to transmit telemetry package");
-      if (isStreaming) {
-        setIsStreaming(false); // halt streaming on auth failure or connection drop
-      }
+      setIsStreaming(false);
+      setIsPlayingScenario(false);
     }
   };
 
+  // Playback execution loop
+  useEffect(() => {
+    if (isPlayingScenario && activeScenario) {
+      const scenarioData = scenarios[activeScenario];
+      const frame = scenarioData.frames[scenarioFrameIdx];
+
+      // Update cockpit sliders to reflect scenario state visually
+      setSpeed(frame.speed);
+      setSteeringAngle(frame.steeringAngle);
+      setBrakePressure(frame.brakePressure);
+      setLaneOffset(frame.laneOffset);
+      setDistance(frame.distance);
+      setAcceleration(frame.acceleration);
+      setWeather(frame.weather);
+      setSegment(frame.segment);
+
+      // Transmit primary vehicle
+      handleTransmit({
+        vehicleId: `${activeVehicleId}_sim_lead`,
+        roadSegmentId: frame.segment,
+        speed: frame.speed,
+        acceleration: frame.acceleration,
+        brakePressure: frame.brakePressure,
+        steeringAngle: frame.steeringAngle,
+        laneOffset: frame.laneOffset,
+        distanceToFrontVehicle: frame.distance,
+        weather: frame.weather
+      });
+
+      // Transmit auxiliary follower vehicle if Multi-Vehicle simulation mode is active
+      if (multiVehicleMode) {
+        setTimeout(() => {
+          handleTransmit({
+            vehicleId: `${activeVehicleId}_sim_follow`,
+            roadSegmentId: frame.segment,
+            speed: Math.max(0, frame.speed - 12),
+            acceleration: frame.acceleration,
+            brakePressure: Math.min(1.0, frame.brakePressure * 0.8),
+            steeringAngle: frame.steeringAngle,
+            laneOffset: Math.max(-1.5, frame.laneOffset - 0.3),
+            distanceToFrontVehicle: Math.min(100, frame.distance + 15),
+            weather: frame.weather
+          });
+        }, 300);
+      }
+
+      scenarioIntervalRef.current = setTimeout(() => {
+        if (scenarioFrameIdx < scenarioData.frames.length - 1) {
+          setScenarioFrameIdx((prev) => prev + 1);
+        } else {
+          setIsPlayingScenario(false);
+          setActiveScenario(null);
+        }
+      }, 1200);
+    }
+
+    return () => {
+      if (scenarioIntervalRef.current) {
+        clearTimeout(scenarioIntervalRef.current);
+      }
+    };
+  }, [isPlayingScenario, scenarioFrameIdx, activeScenario, multiVehicleMode]);
+
   // Manage automated streaming interval
   useEffect(() => {
-    if (isStreaming) {
-      handleTransmit(); // send initial immediately
+    if (isStreaming && !isPlayingScenario) {
+      handleTransmit();
       streamIntervalRef.current = setInterval(() => {
         handleTransmit();
       }, 1000);
@@ -69,7 +177,14 @@ function VehicleCockpit() {
         clearInterval(streamIntervalRef.current);
       }
     };
-  }, [isStreaming, speed, steeringAngle, brakePressure, laneOffset, distance, acceleration, weather, segment]);
+  }, [isStreaming, isPlayingScenario, speed, steeringAngle, brakePressure, laneOffset, distance, acceleration, weather, segment]);
+
+  const startScenario = (key) => {
+    setIsStreaming(false);
+    setActiveScenario(key);
+    setScenarioFrameIdx(0);
+    setIsPlayingScenario(true);
+  };
 
   const handleEmergencyBrake = () => {
     setBrakePressure(0.95);
@@ -100,11 +215,11 @@ function VehicleCockpit() {
         <div className="lg:col-span-5 flex flex-col justify-between space-y-6">
           <div>
             <div className="flex justify-between items-center mb-1">
-              <h3 className="text-xl font-bold text-slate-100">Vehicle Cockpit</h3>
+              <h3 className="text-xl font-bold text-slate-100">Vehicle Cockpit HUD</h3>
               <span className="text-[10px] text-slate-500 font-bold font-mono">ID: {activeVehicleId}</span>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              Real-time driver HUD. Adjust the sliders to simulate live physical sensor values.
+              Real-time driver cockpit telemetry feed. Adjust the sliders to simulate live physical sensor updates.
             </p>
           </div>
 
@@ -171,35 +286,48 @@ function VehicleCockpit() {
             {/* Alert bar inside HUD */}
             {apiResponse && apiResponse.risk?.riskScore >= 0.6 && (
               <div className="absolute top-1/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-950/90 border border-red-800 rounded-lg px-4 py-2 text-center z-30 animate-pulse">
-                <span className="text-xs font-bold text-red-400 block">⚠️ COLLISION / DEVIATION RISK</span>
-                <span className="text-[10px] text-slate-300 capitalize">{apiResponse.risk?.riskLevel} Danger Alert</span>
+                <span className="text-xs font-bold text-red-400 block">⚠️ DANGER ALERT: {apiResponse.risk?.riskLevel.toUpperCase()}</span>
+                <span className="text-[10px] text-slate-350">{apiResponse.risk?.reasons?.[0] || "Critical deviation detected"}</span>
               </div>
             )}
           </div>
 
           {/* AI Decision Panel */}
-          <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 flex flex-col justify-between min-h-[140px]">
+          <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 flex flex-col justify-between min-h-[160px]">
             <div>
               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">AI Edge Intent & Threat Index</span>
               
               {apiResponse ? (
-                <div className="grid grid-cols-2 gap-4 mt-3">
-                  <div>
-                    <p className="text-[9px] uppercase text-slate-500">Predicted Driver Intent</p>
-                    <p className="text-md font-extrabold text-cyan-300 capitalize mt-0.5">
-                      {apiResponse.intentPrediction?.predictedIntent?.replace("_", " ")}
-                    </p>
-                    <p className="text-[9px] text-slate-500 mt-0.5">Confidence: {apiResponse.intentPrediction?.confidence * 100}%</p>
+                <div className="space-y-3 mt-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[9px] uppercase text-slate-500">Predicted Driver Intent</p>
+                      <p className="text-md font-extrabold text-cyan-300 capitalize mt-0.5">
+                        {apiResponse.intentPrediction?.predictedIntent?.replace("_", " ")}
+                      </p>
+                      <p className="text-[9px] text-slate-500 mt-0.5">Confidence: {Math.round(apiResponse.intentPrediction?.confidence * 100)}%</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] uppercase text-slate-500">Evaluated Risk Score</p>
+                      <p className="text-md font-extrabold text-amber-400 mt-0.5">{apiResponse.risk?.riskScore}</p>
+                      <p className="text-[9px] text-slate-500 mt-0.5">Level: <span className="capitalize font-bold text-amber-300">{apiResponse.risk?.riskLevel}</span></p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-[9px] uppercase text-slate-500">Evaluated Risk Score</p>
-                    <p className="text-md font-extrabold text-amber-400 mt-0.5">{apiResponse.risk?.riskScore}</p>
-                    <p className="text-[9px] text-slate-500 mt-0.5">Level: <span className="capitalize font-bold">{apiResponse.risk?.riskLevel}</span></p>
+                  
+                  {/* Actionable recommendations card */}
+                  <div className="border-t border-slate-900 pt-2 text-[11px]">
+                    <span className="font-bold text-slate-400 block mb-1">Recommended Action:</span>
+                    <p className="text-amber-300 font-semibold">{apiResponse.risk?.recommendations?.[0] || "Continue normal driving."}</p>
+                    {apiResponse.risk?.pastIncidentsCount !== undefined && (
+                      <span className="text-[9px] text-slate-500 block mt-1">
+                        * Segment historical incidents count: <span className="text-slate-350 font-bold font-mono">{apiResponse.risk?.pastIncidentsCount} logged</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               ) : (
-                <div className="text-slate-600 text-xs py-4 text-center">
-                  Sensor stream inactive. Click Transmit or toggle Auto-Stream.
+                <div className="text-slate-600 text-xs py-8 text-center">
+                  Sensor stream inactive. Click Transmit or toggle Scenario Playback.
                 </div>
               )}
             </div>
@@ -212,8 +340,60 @@ function VehicleCockpit() {
           </div>
         </div>
 
-        {/* Sliders Configuration (Righthand Column) */}
+        {/* Sliders Configuration & Playback (Righthand Column) */}
         <div className="lg:col-span-7 space-y-5">
+          
+          {/* Virtual Scenarios Playback Card */}
+          <div className="bg-slate-950 border border-slate-850 rounded-2xl p-4">
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <h4 className="text-sm font-bold text-slate-200">Interactive Scenario Playbacks</h4>
+                <p className="text-[10px] text-slate-500">Trigger multi-vehicle simulation sequences</p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="multi-veh-toggle"
+                  checked={multiVehicleMode}
+                  onChange={(e) => setMultiVehicleMode(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-slate-800 bg-slate-950 text-cyan-500 focus:ring-cyan-500"
+                />
+                <label htmlFor="multi-veh-toggle" className="text-[10px] font-bold text-slate-400 cursor-pointer">
+                  Multi-Vehicle Sim (2 Cars)
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {Object.keys(scenarios).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => startScenario(key)}
+                  disabled={isPlayingScenario}
+                  className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                    activeScenario === key
+                      ? "bg-cyan-500/10 border-cyan-500/80 text-cyan-300"
+                      : "bg-slate-900/50 border-slate-900 hover:border-slate-800 text-slate-350"
+                  }`}
+                >
+                  <span className="text-[11px] font-bold block mb-1">
+                    {key === "tailgate" ? "🚗 Unsafe Tailgating" : key === "curve" ? "🌀 Curve Overspeed" : "🌫️ Fog Braking"}
+                  </span>
+                  <span className="text-[9px] text-slate-500 leading-tight block">
+                    {scenarios[key].description.slice(0, 52)}...
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {isPlayingScenario && (
+              <div className="mt-3 flex justify-between items-center bg-slate-900/40 border border-slate-900 rounded-lg px-3 py-2 text-xs">
+                <span className="text-cyan-400 font-bold animate-pulse">Running Playback: {scenarios[activeScenario].name}</span>
+                <span className="text-[10px] text-slate-500 font-mono">Frame {scenarioFrameIdx + 1}/6</span>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-4 bg-slate-950/40 border border-slate-850 rounded-xl p-3 text-xs mb-2">
             <div>
               <span className="text-[10px] text-slate-500 block mb-1">Route Node</span>
@@ -329,6 +509,7 @@ function VehicleCockpit() {
                 type="checkbox"
                 id="auto-stream-toggle"
                 checked={isStreaming}
+                disabled={isPlayingScenario}
                 onChange={(e) => {
                   setIsStreaming(e.target.checked);
                   setStreamCount(0);
@@ -350,10 +531,10 @@ function VehicleCockpit() {
                 </span>
               )}
               <button
-                onClick={handleTransmit}
-                disabled={isStreaming}
+                onClick={() => handleTransmit()}
+                disabled={isStreaming || isPlayingScenario}
                 className={`px-6 py-2.5 rounded-xl text-xs font-bold shadow-md cursor-pointer transition-all ${
-                  isStreaming 
+                  isStreaming || isPlayingScenario
                     ? "bg-slate-900 text-slate-600 border border-slate-850" 
                     : "bg-cyan-500 hover:bg-cyan-400 text-slate-950"
                 }`}

@@ -104,7 +104,57 @@ const getRiskClusters = async (req, res) => {
   }
 };
 
+const getSimilarSegments = async (req, res) => {
+  const { roadSegmentId } = req.params;
+  const driver = getNeo4jDriver();
+
+  if (!driver) {
+    return res.status(503).json({
+      success: false,
+      message: "Neo4j driver not available"
+    });
+  }
+
+  const session = driver.session();
+
+  try {
+    const result = await session.run(
+      `
+      MATCH (r:RoadSegment {roadSegmentId: $roadSegmentId})<-[:AT]-(e:Experience)-[:TYPE]->(ev:Event)
+      MATCH (other:RoadSegment)<-[:AT]-(otherExp:Experience)-[:TYPE]->(ev)
+      WHERE other.roadSegmentId <> r.roadSegmentId
+      RETURN other.roadSegmentId AS similarSegment, ev.type AS sharedHazard, COUNT(otherExp) AS frequency
+      ORDER BY frequency DESC
+      LIMIT 5
+      `,
+      { roadSegmentId }
+    );
+
+    const similarities = result.records.map((record) => ({
+      similarSegment: record.get("similarSegment"),
+      sharedHazard: record.get("sharedHazard"),
+      frequency: record.get("frequency").toNumber ? record.get("frequency").toNumber() : record.get("frequency")
+    }));
+
+    res.json({
+      success: true,
+      roadSegmentId,
+      count: similarities.length,
+      data: similarities
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to find similar segments",
+      error: error.message
+    });
+  } finally {
+    await session.close();
+  }
+};
+
 module.exports = {
   getGraphOverview,
-  getRiskClusters
+  getRiskClusters,
+  getSimilarSegments
 };
