@@ -14,7 +14,7 @@ model = None
 if os.path.exists(MODEL_PATH):
     model = joblib.load(MODEL_PATH)
 
-# In-memory history buffer (vehicle_id -> list of past 30 telemetry dicts)
+# In-memory history buffer (vehicle_id -> list of past 45 telemetry dicts)
 VEHICLE_HISTORY = {}
 
 class IntentRequest(BaseModel):
@@ -65,78 +65,66 @@ def predict_intent(data: IntentRequest):
     }
     
     VEHICLE_HISTORY[vehicle_id].append(current_frame)
-    if len(VEHICLE_HISTORY[vehicle_id]) > 30:
+    if len(VEHICLE_HISTORY[vehicle_id]) > 45:
         VEHICLE_HISTORY[vehicle_id].pop(0)
         
     history = VEHICLE_HISTORY[vehicle_id]
     n = len(history)
     
-    # Backfill lags with current values if not enough history exists
-    speed_lag_15 = history[max(0, n - 16)]["speed"]
-    speed_lag_30 = history[max(0, n - 31)]["speed"]
+    # 1. Physical Interaction Features
+    speed_sq = data.speed ** 2
+    speed_dist_ratio = data.speed / (data.distanceToFrontVehicle + 1.0)
+    steering_speed = data.steeringAngle * data.speed
+    abs_steering_speed = abs(data.steeringAngle) * data.speed
+    safe_margin = data.distanceToFrontVehicle - (data.speed / 3.6 * 1.5)
+    abs_steering = abs(data.steeringAngle)
+    accel_steering = data.acceleration * data.steeringAngle
     
-    steering_lag_15 = history[max(0, n - 16)]["steeringAngle"]
-    steering_lag_30 = history[max(0, n - 31)]["steeringAngle"]
-    
-    accel_lag_15 = history[max(0, n - 16)]["acceleration"]
-    lane_offset_lag_15 = history[max(0, n - 16)]["laneOffset"]
-    
-    # Compute rolling statistics
-    speeds = [f["speed"] for f in history]
-    steerings = [f["steeringAngle"] for f in history]
-    accels = [f["acceleration"] for f in history]
-    
-    # Window 15
-    speeds_15 = speeds[-15:]
-    steerings_15 = steerings[-15:]
-    accels_15 = accels[-15:]
-    
-    speed_mean_15 = float(np.mean(speeds_15))
-    speed_std_15 = float(np.std(speeds_15)) if len(speeds_15) > 1 else 0.0
-    
-    steering_mean_15 = float(np.mean(steerings_15))
-    steering_std_15 = float(np.std(steerings_15)) if len(steerings_15) > 1 else 0.0
-    
-    accel_mean_15 = float(np.mean(accels_15))
-    accel_std_15 = float(np.std(accels_15)) if len(accels_15) > 1 else 0.0
-    
-    # Window 30
-    speed_mean_30 = float(np.mean(speeds))
-    speed_std_30 = float(np.std(speeds)) if len(speeds) > 1 else 0.0
-    
-    steering_mean_30 = float(np.mean(steerings))
-    steering_std_30 = float(np.std(steerings)) if len(steerings) > 1 else 0.0
-    
-    accel_mean_30 = float(np.mean(accels))
-    accel_std_30 = float(np.std(accels)) if len(accels) > 1 else 0.0
-    
-    # Create DataFrame with all 24 features needed by the model
-    features_df = pd.DataFrame([{
+    features_dict = {
         "speed": data.speed,
         "acceleration": data.acceleration,
         "brakePressure": data.brakePressure,
         "steeringAngle": data.steeringAngle,
         "laneOffset": data.laneOffset,
         "distanceToFrontVehicle": data.distanceToFrontVehicle,
-        "speed_lag_15": speed_lag_15,
-        "speed_lag_30": speed_lag_30,
-        "steering_lag_15": steering_lag_15,
-        "steering_lag_30": steering_lag_30,
-        "accel_lag_15": accel_lag_15,
-        "lane_offset_lag_15": lane_offset_lag_15,
-        "speed_mean_15": speed_mean_15,
-        "speed_std_15": speed_std_15,
-        "speed_mean_30": speed_mean_30,
-        "speed_std_30": speed_std_30,
-        "steering_mean_15": steering_mean_15,
-        "steering_std_15": steering_std_15,
-        "steering_mean_30": steering_mean_30,
-        "steering_std_30": steering_std_30,
-        "accel_mean_15": accel_mean_15,
-        "accel_std_15": accel_std_15,
-        "accel_mean_30": accel_mean_30,
-        "accel_std_30": accel_std_30
-    }])
+        "speed_sq": speed_sq,
+        "speed_dist_ratio": speed_dist_ratio,
+        "steering_speed": steering_speed,
+        "abs_steering_speed": abs_steering_speed,
+        "safe_margin": safe_margin,
+        "abs_steering": abs_steering,
+        "accel_steering": accel_steering
+    }
+    
+    # 2. Dense history lags: 5, 10, 15, 20, 25, 30, 45
+    for lag in [5, 10, 15, 20, 25, 30, 45]:
+        target_idx = max(0, n - 1 - lag)
+        features_dict[f"speed_lag_{lag}"] = history[target_idx]["speed"]
+        features_dict[f"steering_lag_{lag}"] = history[target_idx]["steeringAngle"]
+        features_dict[f"accel_lag_{lag}"] = history[target_idx]["acceleration"]
+        features_dict[f"lane_offset_lag_{lag}"] = history[target_idx]["laneOffset"]
+        
+    # 3. Rolling window statistics: 10, 15, 30, 45
+    speeds = [f["speed"] for f in history]
+    steerings = [f["steeringAngle"] for f in history]
+    accels = [f["acceleration"] for f in history]
+    
+    for win in [10, 15, 30, 45]:
+        speeds_win = speeds[-win:]
+        steerings_win = steerings[-win:]
+        accels_win = accels[-win:]
+        
+        features_dict[f"speed_mean_{win}"] = float(np.mean(speeds_win))
+        features_dict[f"speed_std_{win}"] = float(np.std(speeds_win)) if len(speeds_win) > 1 else 0.0
+        
+        features_dict[f"steering_mean_{win}"] = float(np.mean(steerings_win))
+        features_dict[f"steering_std_{win}"] = float(np.std(steerings_win)) if len(steerings_win) > 1 else 0.0
+        
+        features_dict[f"accel_mean_{win}"] = float(np.mean(accels_win))
+        features_dict[f"accel_std_{win}"] = float(np.std(accels_win)) if len(accels_win) > 1 else 0.0
+        
+    # Create DataFrame for prediction
+    features_df = pd.DataFrame([features_dict])
 
     prediction = model.predict(features_df)[0]
     probabilities = model.predict_proba(features_df)[0]
