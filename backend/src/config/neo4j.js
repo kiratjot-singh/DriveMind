@@ -1,29 +1,41 @@
 const neo4j = require("neo4j-driver");
+const { createModuleLogger } = require("./logger");
+
+const log = createModuleLogger("neo4j");
 
 let driver = null;
 
-const connectNeo4j = () => {
+const connectNeo4j = async () => {
   const uri = process.env.NEO4J_URI;
   const username = process.env.NEO4J_USERNAME;
   const password = process.env.NEO4J_PASSWORD;
 
   if (!uri || !username || !password) {
-    console.log("Neo4j config not found. Neo4j connection skipped.");
+    log.warn("Neo4j config not found — graph database connection skipped");
     return null;
   }
 
-  driver = neo4j.driver(uri, neo4j.auth.basic(username, password));
+  try {
+    driver = neo4j.driver(uri, neo4j.auth.basic(username, password));
 
-  console.log("Neo4j driver initialized");
+    // Verify the connection actually works
+    await driver.verifyConnectivity();
+    log.info({ uri }, "Neo4j driver initialized and verified");
 
-  return driver;
+    return driver;
+  } catch (error) {
+    log.error(
+      { error: error.message, uri },
+      "Neo4j connection verification failed — running in degraded mode"
+    );
+    // Keep the driver instance; it may reconnect later
+    return driver;
+  }
 };
 
-const getNeo4jDriver = () => {
-  return driver;
-};
+const getNeo4jDriver = () => driver;
 
 module.exports = {
   connectNeo4j,
-  getNeo4jDriver
+  getNeo4jDriver,
 };

@@ -1,6 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..900;1,14..32,300..900&display=swap');
 @import "tailwindcss";
 
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+/* ── Design Tokens ──────────────────────────────────── */
+:root {
+  --dm-bg: #08111F;
+  --dm-surface: #111827;
+  --dm-surface-hover: #1F2937;
+  --dm-border: #1E293B;
+  --dm-primary: #4F46E5;
+  --dm-primary-dim: rgba(79, 70, 229, 0.12);
+  --dm-accent: #06B6D4;
+  --dm-accent-dim: rgba(6, 182, 212, 0.12);
+  --dm-success: #22C55E;
+  --dm-success-dim: rgba(34, 197, 94, 0.12);
+  --dm-warning: #F59E0B;
+  --dm-warning-dim: rgba(245, 158, 11, 0.12);
+  --dm-danger: #EF4444;
+  --dm-danger-dim: rgba(239, 68, 68, 0.12);
+  --dm-text: #F8FAFC;
+  --dm-muted: #64748B;
+  --dm-dark-muted: #334155;
 }
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--dm-bg);
+  color: var(--dm-text);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ── Custom scrollbar ───────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--dm-bg); }
+::-webkit-scrollbar-thumb { background: var(--dm-border); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dm-primary); }
+
+/* ── Leaflet z-index fix ─────────────────────────── */
+.leaflet-pane { z-index: 1 !important; }
+.leaflet-top, .leaflet-bottom { z-index: 2 !important; }
+.leaflet-container { z-index: 0; background: #060d1a; font-family: 'Inter', sans-serif; }
+
+/* ── Animations ─────────────────────────────────── */
+
+@keyframes ring-pulse {
+  0%, 100% { transform: scale(1);  opacity: 0.6; }
+  50%       { transform: scale(1.12); opacity: 0.2; }
+}
+.animate-ring-pulse { animation: ring-pulse 1.8s ease-in-out infinite; }
+.animate-ring-pulse-slow { animation: ring-pulse 2.6s ease-in-out infinite; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slide-up 0.35s ease-out forwards; }
+
+@keyframes shimmer-x {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in { animation: fade-in 0.4s ease-out; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.animate-blink { animation: blink 1s step-end infinite; }
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 12px var(--glow-color, rgba(79, 70, 229, 0.3)); }
+  50%      { box-shadow: 0 0 24px var(--glow-color, rgba(79, 70, 229, 0.5)); }
+}
+.animate-glow-pulse { animation: glow-pulse 2s ease-in-out infinite; }

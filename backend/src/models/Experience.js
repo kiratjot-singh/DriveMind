@@ -57,6 +57,16 @@ const experienceSchema = new mongoose.Schema(
       required: true
     },
 
+    latitude: {
+      type: Number,
+      required: false
+    },
+
+    longitude: {
+      type: Number,
+      required: false
+    },
+
     timestamp: {
       type: Date,
       default: Date.now
