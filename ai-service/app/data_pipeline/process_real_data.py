@@ -54,14 +54,13 @@ def process_clip(df_clip):
         speeds[0] = 0.0
         headings[0] = 0.0
         
-        # Calculate speed first
+        # Calculate speed
         for i in range(1, n):
             dt = (frames[i] - frames[i-1]) / 30.0
             if dt <= 0:
                 dt = 1/30.0
             dist = haversine_distance(lats[i-1], lons[i-1], lats[i], lons[i])
-            raw_speed = (dist / dt) * 3.6  # speed in km/h
-            speeds[i] = np.clip(raw_speed, 0.0, 80.0)
+            speeds[i] = np.clip((dist / dt) * 3.6, 0.0, 80.0)  # speed in km/h
             
         # Smooth speed to get cleaner accelerations
         speeds = pd.Series(speeds).rolling(window=15, min_periods=1, center=True).mean().values
@@ -73,7 +72,6 @@ def process_clip(df_clip):
                 dt = 1/30.0
             
             raw_acc = ((speeds[i] - speeds[i-1]) / 3.6) / dt  # acceleration in m/s^2
-            # Clip acceleration to physically realistic limits (-6.0 m/s^2 brake to 4.0 m/s^2 acceleration)
             accelerations[i] = np.clip(raw_acc, -6.0, 4.0)
             
             headings[i] = calculate_bearing(lats[i-1], lons[i-1], lats[i], lons[i])
@@ -98,15 +96,36 @@ def process_clip(df_clip):
                 if diff_angle < 0:
                     lane_offsets[i] = -lane_offsets[i]
                     
+        # Compute rolling features over past windows (using pandas Series rolling)
+        speeds_series = pd.Series(speeds)
+        steering_series = pd.Series(steering_rates)
+        accel_series = pd.Series(accelerations)
+        
+        speed_mean_15 = speeds_series.rolling(window=15, min_periods=1).mean().values
+        speed_std_15 = speeds_series.rolling(window=15, min_periods=1).std().fillna(0.0).values
+        speed_mean_30 = speeds_series.rolling(window=30, min_periods=1).mean().values
+        speed_std_30 = speeds_series.rolling(window=30, min_periods=1).std().fillna(0.0).values
+        
+        steering_mean_15 = steering_series.rolling(window=15, min_periods=1).mean().values
+        steering_std_15 = steering_series.rolling(window=15, min_periods=1).std().fillna(0.0).values
+        steering_mean_30 = steering_series.rolling(window=30, min_periods=1).mean().values
+        steering_std_30 = steering_series.rolling(window=30, min_periods=1).std().fillna(0.0).values
+        
+        accel_mean_15 = accel_series.rolling(window=15, min_periods=1).mean().values
+        accel_std_15 = accel_series.rolling(window=15, min_periods=1).std().fillna(0.0).values
+        accel_mean_30 = accel_series.rolling(window=30, min_periods=1).mean().values
+        accel_std_30 = accel_series.rolling(window=30, min_periods=1).std().fillna(0.0).values
+                    
         vehicle_trajectories[veh_id] = {
-            "frames": frames,
-            "lats": lats,
-            "lons": lons,
-            "speeds": speeds,
-            "accelerations": accelerations,
-            "headings": headings,
-            "steering_rates": steering_rates,
-            "lane_offsets": lane_offsets
+            "frames": frames, "lats": lats, "lons": lons,
+            "speeds": speeds, "accelerations": accelerations,
+            "headings": headings, "steering_rates": steering_rates, "lane_offsets": lane_offsets,
+            "speed_mean_15": speed_mean_15, "speed_std_15": speed_std_15,
+            "speed_mean_30": speed_mean_30, "speed_std_30": speed_std_30,
+            "steering_mean_15": steering_mean_15, "steering_std_15": steering_std_15,
+            "steering_mean_30": steering_mean_30, "steering_std_30": steering_std_30,
+            "accel_mean_15": accel_mean_15, "accel_std_15": accel_std_15,
+            "accel_mean_30": accel_mean_30, "accel_std_30": accel_std_30
         }
         
         # Populate frame lookup for distance to front vehicle
@@ -116,7 +135,7 @@ def process_clip(df_clip):
                 frame_lookup[f] = {}
             frame_lookup[f][veh_id] = (lats[i], lons[i], headings[i])
             
-    # Compute relative features and future ground-truth labels
+    # Compute relative features, sequence history lags, and future stable ground-truth labels
     for veh_id, traj in vehicle_trajectories.items():
         frames = traj["frames"]
         lats = traj["lats"]
@@ -127,10 +146,26 @@ def process_clip(df_clip):
         steering_rates = traj["steering_rates"]
         lane_offsets = traj["lane_offsets"]
         
+        speed_mean_15 = traj["speed_mean_15"]
+        speed_std_15 = traj["speed_std_15"]
+        speed_mean_30 = traj["speed_mean_30"]
+        speed_std_30 = traj["speed_std_30"]
+        
+        steering_mean_15 = traj["steering_mean_15"]
+        steering_std_15 = traj["steering_std_15"]
+        steering_mean_30 = traj["steering_mean_30"]
+        steering_std_30 = traj["steering_std_30"]
+        
+        accel_mean_15 = traj["accel_mean_15"]
+        accel_std_15 = traj["accel_std_15"]
+        accel_mean_30 = traj["accel_mean_30"]
+        accel_std_30 = traj["accel_std_30"]
+        
         n = len(frames)
         look_ahead = 45  # 1.5 seconds at 30 FPS
         
-        for i in range(n - look_ahead):
+        # Start at index 30 to ensure we have a valid 1-second history buffer
+        for i in range(30, n - look_ahead):
             f = frames[i]
             dist_to_front = 100.0  # Default to 100 meters if no vehicle ahead
             lat_i, lon_i, head_i = lats[i], lons[i], headings[i]
@@ -151,23 +186,31 @@ def process_clip(df_clip):
             
             speed = speeds[i]
             acc = accelerations[i]
-            # Brake pressure proxied by deceleration level (scaled from 0.0 to 1.0)
             brake_pressure = min(1.0, max(0.0, -acc / 4.0)) if acc < 0 else 0.0
             steering_angle = steering_rates[i]
             lane_offset = lane_offsets[i]
             
-            # Future window metrics for labeling
+            # History lag features
+            speed_lag_15 = speeds[i-15]
+            speed_lag_30 = speeds[i-30]
+            steering_lag_15 = steering_rates[i-15]
+            steering_lag_30 = steering_rates[i-30]
+            accel_lag_15 = accelerations[i-15]
+            lane_offset_lag_15 = lane_offsets[i-15]
+            
+            # Future window metrics for labeling using mean endpoint window to eliminate noise
             future_speeds = speeds[i:i+look_ahead]
             future_headings = headings[i:i+look_ahead]
             future_lane_offsets = lane_offsets[i:i+look_ahead]
             
-            speed_change = future_speeds[-1] - speed
-            heading_change = future_headings[-1] - head_i
-            heading_change = (heading_change + 180) % 360 - 180
+            future_speed_stable = np.mean(future_speeds[-15:])
+            future_heading_stable = np.mean(future_headings[-15:])
             
+            speed_change = future_speed_stable - speed
+            heading_change = (future_heading_stable - head_i + 180) % 360 - 180
             max_future_offset = np.max(np.abs(future_lane_offsets))
             
-            # Assign ground truth intent based on what the vehicle *actually* does in the future
+            # Assign ground truth intent based on future stable behavior
             intent = "normal"
             if speed_change < -5.0:
                 intent = "brake"
@@ -187,6 +230,24 @@ def process_clip(df_clip):
                 "steeringAngle": round(steering_angle, 2),
                 "laneOffset": round(lane_offset, 2),
                 "distanceToFrontVehicle": round(dist_to_front, 2),
+                "speed_lag_15": round(speed_lag_15, 2),
+                "speed_lag_30": round(speed_lag_30, 2),
+                "steering_lag_15": round(steering_lag_15, 2),
+                "steering_lag_30": round(steering_lag_30, 2),
+                "accel_lag_15": round(accel_lag_15, 2),
+                "lane_offset_lag_15": round(lane_offset_lag_15, 2),
+                "speed_mean_15": round(speed_mean_15[i], 2),
+                "speed_std_15": round(speed_std_15[i], 2),
+                "speed_mean_30": round(speed_mean_30[i], 2),
+                "speed_std_30": round(speed_std_30[i], 2),
+                "steering_mean_15": round(steering_mean_15[i], 2),
+                "steering_std_15": round(steering_std_15[i], 2),
+                "steering_mean_30": round(steering_mean_30[i], 2),
+                "steering_std_30": round(steering_std_30[i], 2),
+                "accel_mean_15": round(accel_mean_15[i], 2),
+                "accel_std_15": round(accel_std_15[i], 2),
+                "accel_mean_30": round(accel_mean_30[i], 2),
+                "accel_std_30": round(accel_std_30[i], 2),
                 "intent": intent
             })
             

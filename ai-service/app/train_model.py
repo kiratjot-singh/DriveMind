@@ -21,12 +21,12 @@ MODEL_PATH = "models/intent_model.joblib"
 df = pd.read_csv(DATA_PATH)
 
 features = [
-    "speed",
-    "acceleration",
-    "brakePressure",
-    "steeringAngle",
-    "laneOffset",
-    "distanceToFrontVehicle"
+    "speed", "acceleration", "brakePressure", "steeringAngle", "laneOffset", "distanceToFrontVehicle",
+    "speed_lag_15", "speed_lag_30", "steering_lag_15", "steering_lag_30",
+    "accel_lag_15", "lane_offset_lag_15",
+    "speed_mean_15", "speed_std_15", "speed_mean_30", "speed_std_30",
+    "steering_mean_15", "steering_std_15", "steering_mean_30", "steering_std_30",
+    "accel_mean_15", "accel_std_15", "accel_mean_30", "accel_std_30"
 ]
 
 X = df[features]
