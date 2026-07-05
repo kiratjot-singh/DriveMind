@@ -26,9 +26,9 @@ features = [
     "safe_margin", "abs_steering", "accel_steering"
 ]
 for lag in [5, 10, 15, 20, 25, 30, 45]:
-    features.extend([f"speed_lag_{lag}", f"steering_lag_{lag}", f"accel_lag_{lag}", f"lane_offset_lag_{lag}"])
+    features.extend([f"speed_lag_{lag}", f"steering_lag_{lag}", f"accel_lag_{lag}", f"lane_offset_lag_{lag}", f"dist_lag_{lag}"])
 for win in [10, 15, 30, 45]:
-    features.extend([f"speed_mean_{win}", f"speed_std_{win}", f"steering_mean_{win}", f"steering_std_{win}", f"accel_mean_{win}", f"accel_std_{win}"])
+    features.extend([f"speed_mean_{win}", f"speed_std_{win}", f"steering_mean_{win}", f"steering_std_{win}", f"accel_mean_{win}", f"accel_std_{win}", f"lane_mean_{win}", f"lane_std_{win}"])
 
 X = df[features]
 y = df["intent"]
@@ -45,10 +45,11 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # ----------------------------
-# Model Configuration (Ultimate Random Forest Classifier)
+# Model Configuration (Extra Trees Classifier)
 # ----------------------------
-model = RandomForestClassifier(
-    n_estimators=500,
+from sklearn.ensemble import ExtraTreesClassifier
+model = ExtraTreesClassifier(
+    n_estimators=1500,
     random_state=42,
     class_weight="balanced",
     n_jobs=-1

@@ -103,16 +103,19 @@ def predict_intent(data: IntentRequest):
         features_dict[f"steering_lag_{lag}"] = history[target_idx]["steeringAngle"]
         features_dict[f"accel_lag_{lag}"] = history[target_idx]["acceleration"]
         features_dict[f"lane_offset_lag_{lag}"] = history[target_idx]["laneOffset"]
+        features_dict[f"dist_lag_{lag}"] = history[target_idx]["distanceToFrontVehicle"]
         
     # 3. Rolling window statistics: 10, 15, 30, 45
     speeds = [f["speed"] for f in history]
     steerings = [f["steeringAngle"] for f in history]
     accels = [f["acceleration"] for f in history]
+    lanes = [f["laneOffset"] for f in history]
     
     for win in [10, 15, 30, 45]:
         speeds_win = speeds[-win:]
         steerings_win = steerings[-win:]
         accels_win = accels[-win:]
+        lanes_win = lanes[-win:]
         
         features_dict[f"speed_mean_{win}"] = float(np.mean(speeds_win))
         features_dict[f"speed_std_{win}"] = float(np.std(speeds_win)) if len(speeds_win) > 1 else 0.0
@@ -122,6 +125,9 @@ def predict_intent(data: IntentRequest):
         
         features_dict[f"accel_mean_{win}"] = float(np.mean(accels_win))
         features_dict[f"accel_std_{win}"] = float(np.std(accels_win)) if len(accels_win) > 1 else 0.0
+        
+        features_dict[f"lane_mean_{win}"] = float(np.mean(lanes_win))
+        features_dict[f"lane_std_{win}"] = float(np.std(lanes_win)) if len(lanes_win) > 1 else 0.0
         
     # Create DataFrame for prediction
     features_df = pd.DataFrame([features_dict])
