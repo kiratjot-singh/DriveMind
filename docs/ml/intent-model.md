@@ -104,9 +104,9 @@ Example output:
 The model achieved:
 
 ```text
-Accuracy: 75.90%
-Macro F1-score: 0.63
-Weighted F1-score: 0.76
+Accuracy: 79.32%
+Macro F1-score: 0.68
+Weighted F1-score: 0.80
 ```
 
 This score is realistic for real-world driving data where future maneuvers are predicted from current telemetry profiles. The model successfully generalizes driver intentions from raw telemetry.

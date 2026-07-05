@@ -44,53 +44,31 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # ----------------------------
-# Base Models
+# Model Configuration (Random Forest Classifier)
 # ----------------------------
-rf = RandomForestClassifier(
-    n_estimators=100,
+model = RandomForestClassifier(
+    n_estimators=300,
     random_state=42,
-    class_weight="balanced"
-)
-
-gb = GradientBoostingClassifier(
-    n_estimators=100,
-    random_state=42
-)
-
-lr = LogisticRegression(
-    max_iter=1000,
-    random_state=42,
-    class_weight="balanced"
-)
-
-# ----------------------------
-# Voting Ensemble
-# ----------------------------
-voting_model = VotingClassifier(
-    estimators=[
-        ('rf', rf),
-        ('gb', gb),
-        ('lr', lr)
-    ],
-    voting='soft'      # use probabilities
+    class_weight="balanced",
+    n_jobs=-1
 )
 
 # ----------------------------
 # Train
 # ----------------------------
-voting_model.fit(X_train, y_train)
+model.fit(X_train, y_train)
 
 # ----------------------------
 # Predict
 # ----------------------------
-y_pred = voting_model.predict(X_test)
+y_pred = model.predict(X_test)
 
 # ----------------------------
 # Evaluation
 # ----------------------------
 accuracy = accuracy_score(y_test, y_pred)
 
-print("Voting Ensemble Model Trained")
+print("Random Forest Classifier Model Trained")
 print(f"Accuracy: {accuracy:.4f}")
 
 print("\nClassification Report")
@@ -102,6 +80,6 @@ print(confusion_matrix(y_test, y_pred))
 # ----------------------------
 # Save Model
 # ----------------------------
-joblib.dump(voting_model, MODEL_PATH)
+joblib.dump(model, MODEL_PATH)
 
 print(f"\nModel saved at {MODEL_PATH}")
