@@ -12,3 +12,7 @@ build/
 *.csv
 *.pkl
 *.joblib
+
+# Data directories
+ai-service/data/raw/
+ai-service/data/processed/

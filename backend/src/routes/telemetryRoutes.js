@@ -1,7 +1,7 @@
 const express = require("express");
 const { createTelemetry } = require("../controllers/telemetryController");
 const verifyVehicle = require("../middleware/vehicleAuthMiddleware");
-const validateTelemetry = require("../middleware/validateTelemetry");
+const { validateTelemetry } = require("../middleware/validationMiddleware");
 
 const router = express.Router();
 

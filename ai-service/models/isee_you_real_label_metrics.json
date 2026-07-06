@@ -1,0 +1,90 @@
+{
+  "dataset": "I See You vehicle-pedestrian interaction dataset",
+  "target_source": "dataset-provided interaction category from curated manual interaction list",
+  "target_labels": {
+    "1": "dangerous",
+    "0": "non_dangerous"
+  },
+  "total_interactions": 157,
+  "dangerous_interactions": 78,
+  "non_dangerous_interactions": 79,
+  "train_interactions": 117,
+  "test_interactions": 40,
+  "best_model": "gradient_boosting",
+  "best_cv_accuracy": 0.7605072463768116,
+  "test_accuracy": 0.75,
+  "candidate_runs": [
+    {
+      "name": "random_forest",
+      "cv_accuracy_mean": 0.7181159420289854,
+      "cv_accuracy_std": 0.06352060000235109,
+      "test_accuracy": 0.775
+    },
+    {
+      "name": "gradient_boosting",
+      "cv_accuracy_mean": 0.7605072463768116,
+      "cv_accuracy_std": 0.07094791318434383,
+      "test_accuracy": 0.75
+    },
+    {
+      "name": "logistic_regression",
+      "cv_accuracy_mean": 0.7264492753623188,
+      "cv_accuracy_std": 0.07316687873968289,
+      "test_accuracy": 0.725
+    }
+  ],
+  "feature_columns": [
+    "duration_s",
+    "overlap_duration_s",
+    "vehicle_distance_m",
+    "pedestrian_distance_m",
+    "vehicle_mean_speed_mps",
+    "vehicle_max_speed_mps",
+    "vehicle_std_speed_mps",
+    "pedestrian_mean_speed_mps",
+    "pedestrian_max_speed_mps",
+    "pedestrian_std_speed_mps",
+    "min_distance_m",
+    "mean_distance_m",
+    "distance_at_closest_m",
+    "relative_speed_at_closest_mps",
+    "closing_speed_max_mps"
+  ],
+  "classification_report": {
+    "0": {
+      "precision": 0.7083333333333334,
+      "recall": 0.85,
+      "f1-score": 0.7727272727272727,
+      "support": 20.0
+    },
+    "1": {
+      "precision": 0.8125,
+      "recall": 0.65,
+      "f1-score": 0.7222222222222222,
+      "support": 20.0
+    },
+    "accuracy": 0.75,
+    "macro avg": {
+      "precision": 0.7604166666666667,
+      "recall": 0.75,
+      "f1-score": 0.7474747474747474,
+      "support": 40.0
+    },
+    "weighted avg": {
+      "precision": 0.7604166666666667,
+      "recall": 0.75,
+      "f1-score": 0.7474747474747474,
+      "support": 40.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      17,
+      3
+    ],
+    [
+      7,
+      13
+    ]
+  ]
+}

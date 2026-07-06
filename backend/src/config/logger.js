@@ -1,24 +1,50 @@
-const pino = require("pino");
+const winston = require("winston");
 
-const logger = pino({
+const levels = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  http: 3,
+  debug: 4,
+};
+
+const colors = {
+  error: "red",
+  warn: "yellow",
+  info: "green",
+  http: "magenta",
+  debug: "white",
+};
+
+winston.addColors(colors);
+
+const format = winston.format.combine(
+  winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss:ms" }),
+  winston.format.printf(
+    (info) => `${info.timestamp} ${info.level.toUpperCase()}: ${info.message}`
+  )
+);
+
+const productionFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.json()
+);
+
+const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || "info",
-  transport:
-    process.env.NODE_ENV !== "production"
-      ? { target: "pino/file", options: { destination: 1 } }
-      : undefined,
-  base: { service: "drivemind-backend" },
-  timestamp: pino.stdTimeFunctions.isoTime,
-  formatters: {
-    level(label) {
-      return { level: label };
-    },
-  },
+  levels,
+  format: process.env.NODE_ENV === "production" ? productionFormat : format,
+  transports: [
+    new winston.transports.Console({
+      format: process.env.NODE_ENV === "production" 
+        ? productionFormat 
+        : winston.format.combine(winston.format.colorize({ all: true }), format)
+    })
+  ],
 });
 
-/**
- * Create a child logger scoped to a specific module.
- * Usage: const log = createModuleLogger("telemetryController");
- */
-const createModuleLogger = (moduleName) => logger.child({ module: moduleName });
+// Backward compatibility helper properties
+logger.logger = logger;
+logger.createModuleLogger = (moduleName) => logger.child({ module: moduleName });
 
-module.exports = { logger, createModuleLogger };
+module.exports = logger;

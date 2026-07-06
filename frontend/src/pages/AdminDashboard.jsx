@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getHealthStatus, getAllExperiences, getGraphOverview } from "../api/backendApi";
+import {
+  getHealthStatus,
+  getAllExperiences,
+  getGraphOverview,
+  getExperienceStats,
+  getSimilarSegments
+} from "../api/backendApi";
 import { socket } from "../socket/socketClient";
 import RiskMap from "../components/RiskMap";
 import GlassCard from "../components/ui/GlassCard";
@@ -43,6 +49,10 @@ function AdminDashboard({ onLogout }) {
   const [selectedGraphNode, setSelectedGraphNode] = useState(null);
   const logsEndRef = useRef(null);
 
+  const [stats, setStats] = useState(null);
+  const [similarSegments, setSimilarSegments] = useState([]);
+  const [selectedDashboardSegment, setSelectedDashboardSegment] = useState("curve_42");
+
   // ── Helpers ──────────────────────────────────────────
 
   const addLog = (category, message, status = "info") => {
@@ -61,14 +71,18 @@ function AdminDashboard({ onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [h, e, g] = await Promise.allSettled([
+      const [h, e, g, s, sim] = await Promise.allSettled([
         getHealthStatus(),
         getAllExperiences(),
         getGraphOverview(),
+        getExperienceStats(),
+        getSimilarSegments(selectedDashboardSegment)
       ]);
       if (h.status === "fulfilled") setHealth(h.value);
       if (e.status === "fulfilled" && e.value?.data) setExperiences(e.value.data);
       if (g.status === "fulfilled" && g.value?.data) setGraphData(g.value.data);
+      if (s.status === "fulfilled" && s.value?.stats) setStats(s.value.stats);
+      if (sim.status === "fulfilled" && sim.value?.data) setSimilarSegments(sim.value.data);
       addLog("System", "Data refresh completed", "success");
     } catch (err) {
       setError(err.message);
@@ -87,7 +101,7 @@ function AdminDashboard({ onLogout }) {
       } catch (_) {}
     }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedDashboardSegment]);
 
   // ── Socket.IO ────────────────────────────────────────
 
@@ -242,6 +256,10 @@ function AdminDashboard({ onLogout }) {
                 commonIntent={commonIntent}
                 riskyWeather={riskyWeather}
                 trackedVehicles={trackedVehicles}
+                stats={stats}
+                similarSegments={similarSegments}
+                selectedDashboardSegment={selectedDashboardSegment}
+                setSelectedDashboardSegment={setSelectedDashboardSegment}
               />
             )}
             {activeTab === "pipeline" && <PipelineTab steps={pipelineSteps} lastEvent={lastEvent} />}
@@ -263,7 +281,21 @@ function AdminDashboard({ onLogout }) {
 
 // ── Overview Tab ────────────────────────────────────────
 
-function OverviewTab({ health, statusFor, totalExperiences, criticalCount, avgRisk, dangerousSegment, commonIntent, riskyWeather, trackedVehicles }) {
+function OverviewTab({ 
+  health, 
+  statusFor, 
+  totalExperiences, 
+  criticalCount, 
+  avgRisk, 
+  dangerousSegment, 
+  commonIntent, 
+  riskyWeather, 
+  trackedVehicles,
+  stats,
+  similarSegments,
+  selectedDashboardSegment,
+  setSelectedDashboardSegment
+}) {
   const services = health?.services || {};
   return (
     <div className="space-y-4">
@@ -301,11 +333,93 @@ function OverviewTab({ health, statusFor, totalExperiences, criticalCount, avgRi
           <MetricCard label="Total Experiences" value={totalExperiences} color="var(--dm-text)" />
           <MetricCard label="Critical Events" value={criticalCount} color="var(--dm-danger)" />
           <MetricCard label="Avg Risk Score" value={avgRisk} color="var(--dm-warning)" />
-          <MetricCard label="Riskiest Segment" value={dangerousSegment.replace(/_/g, " ")} color="var(--dm-accent)" sub={`${segmentCount(dangerousSegment)} events`} />
+          <MetricCard label="Riskiest Segment" value={dangerousSegment.replace(/_/g, " ")} color="var(--dm-accent)" />
           <MetricCard label="Common Intent" value={commonIntent.replace(/_/g, " ")} color="var(--dm-primary)" />
           <MetricCard label="Risky Weather" value={riskyWeather} color="var(--dm-warning)" />
           <MetricCard label="Active Vehicles" value={trackedVehicles.size} color="var(--dm-success)" />
         </div>
+      </div>
+
+      {/* SVG Charts & Similar segments */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        
+        {/* Historical Trends */}
+        <GlassCard className="p-4 flex flex-col justify-between min-h-[220px]">
+          <div>
+            <h3 className="text-xs font-bold text-[var(--dm-muted)] uppercase tracking-widest mb-1">Historical Risk Trends</h3>
+            <p className="text-[10px] text-[var(--dm-dark-muted)] mb-3">Daily average risk values for the past 7 days</p>
+          </div>
+
+          {stats && stats.dailyTrends && stats.dailyTrends.length > 0 ? (
+            <div className="h-[100px] flex items-end justify-between px-2 relative mt-2">
+              <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-5">
+                <div className="border-t border-[var(--dm-text)] w-full"></div>
+                <div className="border-t border-[var(--dm-text)] w-full"></div>
+                <div className="border-t border-[var(--dm-text)] w-full"></div>
+              </div>
+              
+              {stats.dailyTrends.map((day, idx) => {
+                const heightPct = Math.round((day.avgRisk || 0) * 100);
+                return (
+                  <div key={idx} className="flex flex-col items-center flex-1 mx-1 z-10">
+                    <div className="text-[8px] text-cyan-400 font-mono mb-1">{(day.avgRisk || 0).toFixed(2)}</div>
+                    <div 
+                      className="w-full bg-indigo-500/80 rounded-t-sm transition-all duration-500"
+                      style={{ height: `${Math.max(8, heightPct)}px` }}
+                    ></div>
+                    <span className="text-[8px] text-[var(--dm-muted)] mt-1.5 font-mono">{day._id.slice(5)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-[var(--dm-dark-muted)] text-xs border border-dashed border-[var(--dm-border)] rounded-xl">
+              No historical trend data logged yet. Playback some scenarios.
+            </div>
+          )}
+        </GlassCard>
+
+        {/* Similar Segment explorer */}
+        <GlassCard className="p-4">
+          <div className="flex justify-between items-center mb-2">
+            <div>
+              <h3 className="text-xs font-bold text-[var(--dm-muted)] uppercase tracking-widest mb-1">Similar Segment threats</h3>
+              <p className="text-[10px] text-[var(--dm-dark-muted)]">Sectors matching current hazards</p>
+            </div>
+            <select
+              value={selectedDashboardSegment}
+              onChange={(e) => setSelectedDashboardSegment(e.target.value)}
+              className="bg-[var(--dm-bg)] border border-[var(--dm-border)] text-[10px] rounded px-2 py-1 text-[var(--dm-text)] focus:outline-none"
+            >
+              <option value="curve_42">Gateway Curve (Curve-42)</option>
+              <option value="highway_101">Marine Drive (Highway-101)</option>
+              <option value="intersection_alpha">Crawford (Intersection-Alpha)</option>
+            </select>
+          </div>
+
+          <div className="space-y-2 max-h-[140px] overflow-auto mt-2 pr-1">
+            {similarSegments.length > 0 ? (
+              similarSegments.map((item, index) => (
+                <div
+                  key={index}
+                  className="bg-[var(--dm-bg)]/40 border border-[var(--dm-border)] rounded-lg p-2.5 text-[10px] flex justify-between items-center"
+                >
+                  <div>
+                    <span className="font-bold text-[var(--dm-text)] uppercase font-mono">{item.similarSegment}</span>
+                    <span className="text-[var(--dm-dark-muted)] ml-2">Hazard: {item.sharedHazard?.replace(/_/g, " ")}</span>
+                  </div>
+                  <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded text-[8px] font-mono">
+                    Logged {item.frequency} times
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-[var(--dm-dark-muted)] text-xs border border-dashed border-[var(--dm-border)] rounded-xl">
+                No similar segment matches recorded.
+              </div>
+            )}
+          </div>
+        </GlassCard>
       </div>
 
       {/* Server Info */}

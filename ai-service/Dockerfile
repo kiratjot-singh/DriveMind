@@ -18,4 +18,4 @@ COPY . .
 EXPOSE 8000
 
 # Run model generation and training if model file does not exist, then start uvicorn
-CMD ["sh", "-c", "if [ ! -f models/intent_model.joblib ]; then python data/generate_intent_data.py && python app/train_model.py; fi && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "if [ ! -f models/intent_model.joblib ]; then python app/data_pipeline/process_real_data.py && python app/train_model.py; fi && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

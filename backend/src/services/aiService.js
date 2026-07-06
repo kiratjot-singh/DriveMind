@@ -1,8 +1,8 @@
 const axios = require("axios");
 const axiosRetry = require("axios-retry").default;
-const { createModuleLogger } = require("../config/logger");
+const logger = require("../config/logger");
 
-const log = createModuleLogger("aiService");
+const log = logger.createModuleLogger("aiService");
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
 
@@ -21,8 +21,7 @@ axiosRetry(aiClient, {
     error.code === "ECONNABORTED",
   onRetry: (retryCount, error) => {
     log.warn(
-      { retryCount, error: error.message },
-      `AI service retry attempt ${retryCount}`
+      `AI service retry attempt ${retryCount}: ${error.message}`
     );
   },
 });
@@ -37,12 +36,12 @@ const predictIntent = async (telemetry) => {
       steeringAngle: telemetry.steeringAngle,
       laneOffset: telemetry.laneOffset,
       distanceToFrontVehicle: telemetry.distanceToFrontVehicle,
+      vehicleId: telemetry.vehicleId,
     });
 
     const latencyMs = Date.now() - start;
     log.info(
-      { intent: response.data.predictedIntent, confidence: response.data.confidence, latencyMs },
-      "AI prediction completed"
+      `AI prediction completed: intent=${response.data.predictedIntent}, confidence=${response.data.confidence} (${latencyMs}ms)`
     );
 
     return {
@@ -53,8 +52,7 @@ const predictIntent = async (telemetry) => {
   } catch (error) {
     const latencyMs = Date.now() - start;
     log.error(
-      { error: error.message, latencyMs },
-      "AI service unavailable after retries"
+      `AI service unavailable after retries: ${error.message} (${latencyMs}ms)`
     );
 
     return {

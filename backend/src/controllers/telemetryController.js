@@ -6,9 +6,9 @@ const { predictIntent } = require("../services/aiService");
 const { emitRiskAlert, emitTelemetryProcessed } = require("../services/socketService");
 const { createExperienceGraph } = require("../services/graphService");
 const { CHANDIGARH_COORDINATES } = require("../config/roadSegments");
-const { createModuleLogger } = require("../config/logger");
+const logger = require("../config/logger");
 
-const log = createModuleLogger("telemetryController");
+const log = logger.createModuleLogger("telemetryController");
 
 /**
  * Measure execution time of an async function.
@@ -82,6 +82,7 @@ const createTelemetry = async (req, res) => {
     // Stage 2: AI Intent Prediction
     const { result: intentPrediction, ms: aiMs } = await timed(() =>
       predictIntent({
+        vehicleId,
         speed,
         acceleration,
         brakePressure,
@@ -91,7 +92,7 @@ const createTelemetry = async (req, res) => {
       })
     );
     pipelineTiming.aiMs = aiMs;
-    pipelineTiming.aiDegraded = intentPrediction.degraded || false;
+    pipelineTiming.aiDegraded = !intentPrediction.success;
 
     // Stage 3: Risk Scoring
     const riskStart = Date.now();
@@ -107,6 +108,9 @@ const createTelemetry = async (req, res) => {
     pipelineTiming.riskMs = Date.now() - riskStart;
 
     // Stage 4: Collective Memory Lookup
+    const pastIncidentsCount = await Experience.countDocuments({ roadSegmentId });
+    riskResult.pastIncidentsCount = pastIncidentsCount;
+
     const similarPastExperiences = await Experience.find({
       roadSegmentId,
       $or: [
@@ -191,6 +195,8 @@ const createTelemetry = async (req, res) => {
         intentConfidence: intentPrediction.confidence,
         reasons: riskResult.reasons,
         recommendedAction: riskResult.recommendedAction,
+        recommendations: riskResult.recommendations,
+        pastIncidentsCount,
         message: `High risk detected at ${roadSegmentId}. Recommended action: ${riskResult.recommendedAction}`,
         collectiveRecommendation,
         similarPastExperiences,
@@ -224,14 +230,7 @@ const createTelemetry = async (req, res) => {
     });
 
     log.info(
-      {
-        vehicleId,
-        roadSegmentId,
-        riskScore: riskResult.riskScore,
-        riskLevel: riskResult.riskLevel,
-        pipelineTiming,
-      },
-      "Telemetry pipeline completed"
+      `Telemetry pipeline completed for ${vehicleId} on ${roadSegmentId}`
     );
 
     res.status(201).json({
@@ -250,10 +249,7 @@ const createTelemetry = async (req, res) => {
       },
     });
   } catch (error) {
-    log.error(
-      { err: error.message, stack: error.stack },
-      "Telemetry pipeline failed"
-    );
+    log.error(`Telemetry pipeline failed: ${error.message}`);
     res.status(500).json({
       success: false,
       message: "Failed to store telemetry",

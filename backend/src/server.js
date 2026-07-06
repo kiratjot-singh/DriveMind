@@ -6,6 +6,7 @@ const helmet = require("helmet");
 const { Server } = require("socket.io");
 const rateLimit = require("express-rate-limit");
 
+const logger = require("./config/logger");
 const healthRoutes = require("./routes/healthRoutes");
 const telemetryRoutes = require("./routes/telemetryRoutes");
 const experienceRoutes = require("./routes/experienceRoutes");
@@ -17,15 +18,10 @@ const errorHandler = require("./middleware/errorHandler");
 const connectDB = require("./config/db");
 const { connectNeo4j } = require("./config/neo4j");
 const { initSocket } = require("./services/socketService");
-const { createModuleLogger } = require("./config/logger");
 
 dotenv.config();
 
-const log = createModuleLogger("server");
-
-// ── Initialize ────────────────────────────────────────
-connectDB();
-connectNeo4j();
+const log = logger.createModuleLogger("server");
 
 const app = express();
 const server = http.createServer(app);
@@ -44,20 +40,32 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
-// ── Request timing middleware ─────────────────────────
+// ── Request timing logger middleware ──────────────────
 app.use((req, res, next) => {
   const start = Date.now();
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (req.originalUrl !== "/api/health") {
       log.info(
-        { method: req.method, url: req.originalUrl, statusCode: res.statusCode, durationMs: duration },
         `${req.method} ${req.originalUrl} → ${res.statusCode} (${duration}ms)`
       );
     }
   });
   next();
 });
+
+// ── Rate limiting for general API ────────────────────
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000,
+  message: {
+    success: false,
+    message: "Too many requests, please try again later."
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use("/api", apiLimiter);
 
 // ── Rate limiting for telemetry endpoint ──────────────
 const telemetryLimiter = rateLimit({
@@ -86,19 +94,36 @@ app.use("/api/experiences", verifyAdmin, experienceRoutes);
 app.use("/api/road-risk", verifyAdmin, roadRiskRoutes);
 app.use("/api/graph", verifyAdmin, graphRoutes);
 
+// Socket.io connection logging
+io.on("connection", (socket) => {
+  log.info(`Vehicle/dashboard connected: ${socket.id}`);
+
+  socket.on("disconnect", () => {
+    log.info(`Client disconnected: ${socket.id}`);
+  });
+});
+
 // ── Centralized error handler (must be last) ──────────
 app.use(errorHandler);
 
-// ── Start server ──────────────────────────────────────
 const PORT = process.env.PORT || 5001;
 
-server.listen(PORT, () => {
-  log.info({ port: PORT, env: process.env.NODE_ENV || "development" }, `DriveMind backend running on port ${PORT}`);
-});
+// ── Start server ──────────────────────────────────────
+const startServer = async () => {
+  log.info("Initializing DriveMind backend databases...");
+  await connectDB();
+  await connectNeo4j();
+
+  server.listen(PORT, () => {
+    log.info(`DriveMind backend running on port ${PORT}`);
+  });
+};
+
+startServer();
 
 // ── Graceful shutdown ─────────────────────────────────
 const gracefulShutdown = (signal) => {
-  log.info({ signal }, "Received shutdown signal — closing connections");
+  log.info(`Received shutdown signal (${signal}) — closing connections`);
 
   server.close(() => {
     log.info("HTTP server closed");
@@ -120,5 +145,5 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Handle unhandled rejections
 process.on("unhandledRejection", (reason) => {
-  log.error({ reason: reason?.message || reason }, "Unhandled promise rejection");
+  log.error(`Unhandled promise rejection: ${reason?.message || reason}`);
 });

@@ -10,11 +10,17 @@ const startedAt = new Date();
 router.get("/", async (req, res) => {
   const healthStatus = {
     status: "ok",
+    service: "DriveMind Backend",
     version: require("../../package.json").version || "1.0.0",
-    uptime: Math.floor((Date.now() - startedAt.getTime()) / 1000),
+    uptime: process.uptime(),
     startedAt: startedAt.toISOString(),
-    connectedClients: getConnectedClients(),
+    memoryUsage: process.memoryUsage(),
+    connectedClients: typeof getConnectedClients === "function" ? getConnectedClients() : 0,
     timestamp: new Date(),
+    databases: {
+      mongodb: "unhealthy",
+      neo4j: "unhealthy",
+    },
     services: {
       backend: { status: "connected", latency: 0 },
       ai: { status: "disconnected", latency: null, error: null },
@@ -48,15 +54,18 @@ router.get("/", async (req, res) => {
       await mongoose.connection.db.admin().ping();
       healthStatus.services.mongodb.status = "connected";
       healthStatus.services.mongodb.latency = Date.now() - mongoStart;
+      healthStatus.databases.mongodb = "healthy";
     } else {
       healthStatus.services.mongodb.status = "disconnected";
       healthStatus.services.mongodb.error = "MongoDB connection state is not active";
       healthStatus.services.mongodb.latency = Date.now() - mongoStart;
+      healthStatus.databases.mongodb = "unhealthy";
     }
   } catch (err) {
     healthStatus.services.mongodb.status = "disconnected";
     healthStatus.services.mongodb.error = err.message;
     healthStatus.services.mongodb.latency = Date.now() - mongoStart;
+    healthStatus.databases.mongodb = `unhealthy: ${err.message}`;
   }
 
   // 4. Neo4j check
@@ -68,10 +77,12 @@ router.get("/", async (req, res) => {
       await session.run("RETURN 1");
       healthStatus.services.neo4j.status = "connected";
       healthStatus.services.neo4j.latency = Date.now() - neo4jStart;
+      healthStatus.databases.neo4j = "healthy";
     } catch (err) {
       healthStatus.services.neo4j.status = "disconnected";
       healthStatus.services.neo4j.error = err.message;
       healthStatus.services.neo4j.latency = Date.now() - neo4jStart;
+      healthStatus.databases.neo4j = `unhealthy: ${err.message}`;
     } finally {
       await session.close();
     }
@@ -79,17 +90,14 @@ router.get("/", async (req, res) => {
     healthStatus.services.neo4j.status = "disconnected";
     healthStatus.services.neo4j.error = "Neo4j driver not initialized";
     healthStatus.services.neo4j.latency = Date.now() - neo4jStart;
+    healthStatus.databases.neo4j = "uninitialized";
   }
 
-  // If any service is offline, flag parent status as degraded
-  const anyOffline = Object.values(healthStatus.services).some(
-    (s) => s.status === "disconnected"
-  );
-  if (anyOffline) {
-    healthStatus.status = "degraded";
-  }
+  // If any critical service is offline, flag parent status as degraded
+  const isHealthy = healthStatus.databases.mongodb === "healthy" && healthStatus.databases.neo4j === "healthy";
+  healthStatus.status = isHealthy ? "ok" : "degraded";
 
-  res.json(healthStatus);
+  res.status(isHealthy ? 200 : 500).json(healthStatus);
 });
 
 module.exports = router;
